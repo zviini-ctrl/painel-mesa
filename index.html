@@ -59,7 +59,9 @@
     opacity:0;transition:opacity .6s ease;pointer-events:none;
     filter:blur(var(--clockbg-blur,0px));transform:scale(1.06)}
   #clockBg.show{opacity:1}
-  #clockBg::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.42)}
+  #clockBg::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.42);z-index:1}
+  #clockVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;z-index:0;pointer-events:none}
+  #clockVid.on{opacity:1}
   #clock{position:relative;z-index:1}
 
   /* ---- CLOCK ---- */
@@ -191,7 +193,7 @@
 <body>
 
 <div id="stage">
-  <div id="clockBg"></div>
+  <div id="clockBg"><video id="clockVid" muted loop autoplay playsinline></video></div>
   <!-- clock -->
   <div id="clock" hidden>
     <div id="time"></div>
@@ -283,11 +285,11 @@
     <div class="group">
       <div class="label">Fundo do relógio</div>
       <div class="field" style="margin-bottom:.7rem">
-        <input type="url" id="bgUrlInput" placeholder="Link de imagem (https://...)" inputmode="url" autocomplete="off" spellcheck="false">
+        <input type="url" id="bgUrlInput" placeholder="Link de imagem ou vídeo" inputmode="url" autocomplete="off" spellcheck="false">
         <button class="btn accent" id="bgUrlGo">Usar</button>
       </div>
       <div class="row" style="padding:0">
-        <button class="btn" id="bgFileBtn">Escolher imagem</button>
+        <button class="btn" id="bgFileBtn">Escolher arquivo</button>
         <span class="count" id="bgState">Nenhuma</span>
       </div>
       <button class="btn" id="clearBg" style="align-self:flex-start;margin-top:.6rem"><span class="danger">Remover fundo</span></button>
@@ -341,7 +343,7 @@
 
 <input type="file" id="filePhotos" accept="image/*" multiple>
 <input type="file" id="fileGif" accept="image/gif,video/mp4,video/webm,video/*,image/*">
-<input type="file" id="fileBg" accept="image/*">
+<input type="file" id="fileBg" accept="image/*,video/mp4,video/webm,video/*">
 
 <script>
 (function(){
@@ -494,16 +496,30 @@
 
   // ---------- clock wallpaper ----------
   var bgObjUrl=null;
-  function applyClockBg(src){
-    var el=$("#clockBg");
-    if(src){el.style.backgroundImage='url("'+src+'")';el.classList.toggle("show",cfg.mode==="clock");$("#bgState").textContent=cfg.clockBgUrl?"Link":"Imagem";}
-    else{el.style.backgroundImage="";el.classList.remove("show");$("#bgState").textContent="Nenhuma";}
+  function applyClockBg(src,isVid){
+    var el=$("#clockBg"),vid=$("#clockVid");
+    if(src){
+      if(isVid){
+        el.style.backgroundImage="";
+        vid.src=src;vid.classList.add("on");
+        try{vid.muted=true;var p=vid.play&&vid.play();if(p&&p.catch)p.catch(function(){});}catch(e){}
+      }else{
+        try{vid.pause&&vid.pause()}catch(e){}vid.removeAttribute("src");vid.classList.remove("on");
+        el.style.backgroundImage='url("'+src+'")';
+      }
+      el.classList.toggle("show",cfg.mode==="clock");
+      $("#bgState").textContent=cfg.clockBgUrl?"Link":(isVid?"Vídeo":"Imagem");
+    }else{
+      el.style.backgroundImage="";
+      try{vid.pause&&vid.pause()}catch(e){}vid.removeAttribute("src");vid.classList.remove("on");
+      el.classList.remove("show");$("#bgState").textContent="Nenhuma";
+    }
   }
   function refreshClockBg(){
     if(bgObjUrl){try{URL.revokeObjectURL(bgObjUrl)}catch(e){}bgObjUrl=null;}
-    if(cfg.clockBgUrl){applyClockBg(cfg.clockBgUrl);return Promise.resolve();}
+    if(cfg.clockBgUrl){applyClockBg(cfg.clockBgUrl,isVideoSrc(cfg.clockBgUrl));return Promise.resolve();}
     return getBg().then(function(blob){
-      if(blob){bgObjUrl=URL.createObjectURL(blob);applyClockBg(bgObjUrl);}
+      if(blob){var vid=blob.type&&blob.type.indexOf("video")===0;bgObjUrl=URL.createObjectURL(blob);applyClockBg(bgObjUrl,vid);}
       else{applyClockBg(null);}
     });
   }
@@ -514,7 +530,7 @@
     $("#clock").hidden=mode!=="clock";
     $("#photos").hidden=mode!=="photos";
     $("#gif").hidden=mode!=="gif";
-    $("#clockBg").classList.toggle("show",mode==="clock"&&!!$("#clockBg").style.backgroundImage);
+    $("#clockBg").classList.toggle("show",mode==="clock"&&(!!$("#clockBg").style.backgroundImage||$("#clockVid").classList.contains("on")));
     document.querySelectorAll(".seg button").forEach(function(b){b.setAttribute("aria-pressed",b.getAttribute("data-mode")===mode?"true":"false")});
     if(mode==="photos"){refreshPhotos()}else{stopSlides()}
     if(mode==="gif"){refreshGif()}
@@ -621,6 +637,9 @@
   $("#bgFileBtn").addEventListener("click",function(){fileBg.click()});
   fileBg.addEventListener("change",function(){var f=this.files&&this.files[0];if(!f)return;cfg.clockBgUrl="";save();setBg(f).then(function(){fileBg.value="";refreshClockBg()})});
   $("#clearBg").addEventListener("click",function(){cfg.clockBgUrl="";save();setBg(null).then(function(){refreshClockBg()})});
+  $("#clockVid").addEventListener("error",function(){
+    if($("#clockVid").getAttribute("src")){$("#clockVid").classList.remove("on");$("#bgState").textContent="Link não carregou";}
+  });
 
   // ---------- fullscreen ----------
   $("#fsBtn").addEventListener("click",function(){
