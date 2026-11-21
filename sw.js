@@ -1,5 +1,5 @@
-/* Painel de Mesa — service worker (offline shell) */
-var CACHE = "painel-mesa-v1";
+/* Painel de Mesa — service worker */
+var CACHE = "painel-mesa-v3";
 var ASSETS = [
   "./",
   "./index.html",
@@ -27,6 +27,21 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   var req = e.request;
   if (req.method !== "GET") return;
+
+  // Network-first for the page itself, so updates show up immediately when online.
+  if (req.mode === "navigate" || req.destination === "document") {
+    e.respondWith(
+      fetch(req).then(function (res) {
+        try { var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(req, copy); }); } catch (_) {}
+        return res;
+      }).catch(function () {
+        return caches.match(req).then(function (hit) { return hit || caches.match("./index.html"); });
+      })
+    );
+    return;
+  }
+
+  // Cache-first for everything else (icons, fonts, etc.)
   e.respondWith(
     caches.match(req).then(function (hit) {
       if (hit) return hit;
@@ -41,9 +56,7 @@ self.addEventListener("fetch", function (e) {
           }
         } catch (_) {}
         return res;
-      }).catch(function () {
-        return caches.match("./index.html");
-      });
+      }).catch(function () { return caches.match("./index.html"); });
     })
   );
 });
